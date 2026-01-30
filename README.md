@@ -30,123 +30,149 @@ STEP-5: Combine all these groups to get the complete cipher text.
 
 ## PROGRAM 
 ```
-import math
+#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
+#include <math.h>
 
-ALPHABET_SIZE = 26
-A_ORD = ord('A')
+#define MOD 26
+#define MAX 10
 
-def _egcd(a, b):
-    if b == 0:
-        return (a, 1, 0)
-    g, x1, y1 = _egcd(b, a % b)
-    return (g, y1, x1 - (a // b) * y1)
+int mod(int x) {
+    return (x % MOD + MOD) % MOD;
+}
 
-def modinv(a, m):
-    g, x, _ = _egcd(a % m, m)
-    if g != 1:
-        raise ValueError(f"No modular inverse for {a} mod {m}")
-    return x % m
+/* Extended Euclidean Algorithm */
+int modInverse(int a) {
+    a = mod(a);
+    for (int i = 1; i < MOD; i++)
+        if ((a * i) % MOD == 1)
+            return i;
+    return -1;
+}
 
-def _determinant(matrix):
-    n = len(matrix)
-    if n == 1: return matrix[0][0]
-    if n == 2: return matrix[0][0]*matrix[1][1] - matrix[0][1]*matrix[1][0]
-    det = 0
-    for c in range(n):
-        minor = [row[:c] + row[c+1:] for row in matrix[1:]]
-        det += ((-1)**c) * matrix[0][c] * _determinant(minor)
-    return det
+/* Determinant (recursive) */
+int determinant(int mat[MAX][MAX], int n) {
+    if (n == 1) return mat[0][0];
+    if (n == 2)
+        return mat[0][0]*mat[1][1] - mat[0][1]*mat[1][0];
 
-def _matrix_of_minors(matrix):
-    n = len(matrix)
-    minors = [[0]*n for _ in range(n)]
-    for i in range(n):
-        for j in range(n):
-            minor = [row[:j] + row[j+1:] for idx,row in enumerate(matrix) if idx != i]
-            minors[i][j] = _determinant(minor)
-    return minors
+    int det = 0, temp[MAX][MAX];
+    for (int c = 0; c < n; c++) {
+        int ti = 0, tj = 0;
+        for (int i = 1; i < n; i++) {
+            tj = 0;
+            for (int j = 0; j < n; j++) {
+                if (j == c) continue;
+                temp[ti][tj++] = mat[i][j];
+            }
+            ti++;
+        }
+        det += (c % 2 == 0 ? 1 : -1) * mat[0][c] * determinant(temp, n-1);
+    }
+    return det;
+}
 
-def _cofactor_matrix(matrix):
-    n = len(matrix)
-    minors = _matrix_of_minors(matrix)
-    return [[(((-1)**(i+j)) * minors[i][j]) for j in range(n)] for i in range(n)]
+/* Matrix inverse modulo 26 */
+void matrixInverse(int mat[MAX][MAX], int inv[MAX][MAX], int n) {
+    int det = mod(determinant(mat, n));
+    int invDet = modInverse(det);
 
-def _transpose(matrix):
-    return [list(col) for col in zip(*matrix)]
+    int temp[MAX][MAX], adj[MAX][MAX];
 
-def matrix_mod_inv(matrix, mod):
-    det = _determinant(matrix) % mod
-    det_inv = modinv(det, mod)
-    cof = _cofactor_matrix(matrix)
-    adj = _transpose(cof)
-    return [[(det_inv * (adj[i][j] % mod)) % mod for j in range(len(matrix))] for i in range(len(matrix))]
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            int ti = 0, tj = 0;
+            for (int r = 0; r < n; r++) {
+                if (r == i) continue;
+                tj = 0;
+                for (int c = 0; c < n; c++) {
+                    if (c == j) continue;
+                    temp[ti][tj++] = mat[r][c];
+                }
+                ti++;
+            }
+            int sign = ((i + j) % 2 == 0) ? 1 : -1;
+            adj[j][i] = mod(sign * determinant(temp, n-1));
+        }
+    }
 
-def _chunkify(lst, size):
-    chunks = []
-    for i in range(0, len(lst), size):
-        chunk = lst[i:i+size]
-        if len(chunk) < size:
-            chunk += [0] * (size - len(chunk))  # pad with 'A'
-        chunks.append(chunk)
-    return chunks
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++)
+            inv[i][j] = mod(adj[i][j] * invDet);
+}
 
-def _mat_mul_vec(matrix, vec, mod):
-    return [sum(matrix[i][j]*vec[j] for j in range(len(vec))) % mod for i in range(len(matrix))]
+/* Matrix × Vector */
+void multiply(int mat[MAX][MAX], int vec[MAX], int res[MAX], int n) {
+    for (int i = 0; i < n; i++) {
+        res[i] = 0;
+        for (int j = 0; j < n; j++)
+            res[i] += mat[i][j] * vec[j];
+        res[i] = mod(res[i]);
+    }
+}
 
-def _text_to_nums(text):
-    cleaned = ''.join([c for c in text.upper() if c.isalpha()])
-    return [ord(c) - A_ORD for c in cleaned]
+int main() {
+    char key[100], text[100];
+    int K[MAX][MAX], Kinv[MAX][MAX];
+    int nums[100], block[MAX], out[MAX];
+    char choice;
+    int len = 0;
 
-def _nums_to_text(nums):
-    return ''.join(chr((n % ALPHABET_SIZE) + A_ORD) for n in nums)
+    printf("Enter key (length must be perfect square): ");
+    scanf("%s", key);
 
-def key_to_matrix(key):
-    k = ''.join([c for c in key.upper() if c.isalpha()])
-    length = len(k)
-    n = int(math.isqrt(length))
-    if n*n != length:
-        raise ValueError("Key length must be a perfect square (e.g. 4, 9, 16).")
-    nums = [ord(c) - A_ORD for c in k]
-    return [nums[i*n:(i+1)*n] for i in range(n)]
+    int klen = strlen(key);
+    int n = sqrt(klen);
 
-def encrypt(plaintext, key):
-    K = key_to_matrix(key)
-    n = len(K)
-    nums = _text_to_nums(plaintext)
-    chunks = _chunkify(nums, n)
-    cipher_nums = []
-    for chunk in chunks:
-        cipher_nums.extend(_mat_mul_vec(K, chunk, ALPHABET_SIZE))
-    return _nums_to_text(cipher_nums)
+    if (n * n != klen) {
+        printf("Invalid key length!\n");
+        return 0;
+    }
 
-def decrypt(ciphertext, key):
-    K = key_to_matrix(key)
-    K_inv = matrix_mod_inv(K, ALPHABET_SIZE)
-    n = len(K)
-    nums = _text_to_nums(ciphertext)
-    chunks = _chunkify(nums, n)
-    plain_nums = []
-    for chunk in chunks:
-        plain_nums.extend(_mat_mul_vec(K_inv, chunk, ALPHABET_SIZE))
-    return _nums_to_text(plain_nums)
+    int idx = 0;
+    for (int i = 0; i < n; i++)
+        for (int j = 0; j < n; j++)
+            K[i][j] = toupper(key[idx++]) - 'A';
 
-if __name__ == "__main__":
-    key = input("Enter the key (length must be square, e.g. 4, 9, 16 letters): ")
-    choice = input("Encrypt or Decrypt? (E/D): ").strip().upper()
-    if choice == "E":
-        pt = input("Enter plaintext: ")
-        print("Ciphertext:", encrypt(pt, key))
-    elif choice == "D":
-        ct = input("Enter ciphertext: ")
-        print("Plaintext:", decrypt(ct, key))
-    else:
-        print("Invalid choice!")
+    printf("Encrypt or Decrypt (E/D): ");
+    scanf(" %c", &choice);
+
+    printf("Enter text: ");
+    scanf("%s", text);
+
+    for (int i = 0; text[i]; i++)
+        if (isalpha(text[i]))
+            nums[len++] = toupper(text[i]) - 'A';
+
+    while (len % n != 0)
+        nums[len++] = 0;   // padding A
+
+    if (choice == 'D')
+        matrixInverse(K, Kinv, n);
+
+    printf("\nResult: ");
+    for (int i = 0; i < len; i += n) {
+        for (int j = 0; j < n; j++)
+            block[j] = nums[i + j];
+
+        if (choice == 'E')
+            multiply(K, block, out, n);
+        else
+            multiply(Kinv, block, out, n);
+
+        for (int j = 0; j < n; j++)
+            printf("%c", out[j] + 'A');
+    }
+
+    return 0;
+}
 
 ```
 
 ## OUTPUT
+<img width="609" height="368" alt="Screenshot 2026-01-30 205035" src="https://github.com/user-attachments/assets/97ca7dce-ac39-42e7-8952-28edf81d86ec" />
 
-<img width="819" height="386" alt="image" src="https://github.com/user-attachments/assets/5189f796-4153-4863-9527-a6a88480c168" />
 
 ## RESULT
 
